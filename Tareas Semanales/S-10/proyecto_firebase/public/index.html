@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notificador FireBase</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding-top: 20px;
+            background-color: #f8f9fa;
+        }
+
+        .notification-card {
+            max-width: 600px;
+            margin: 0 auto;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        #notification-history {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 30px;
+        }
+
+        .timestamp {
+            font-size: 0.8em;
+            color: #6c757d;
+        }
+
+        .form-row {
+            display: flex;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .form-label-col {
+            width: 100px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .message-textarea {
+            border: none;
+            background-color: transparent;
+            width: 100%;
+            resize: none;
+            padding: 0;
+        }
+
+        .message-textarea:focus {
+            outline: none;
+            box-shadow: none;
+        }
+
+        .send-btn {
+            width: 100%;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 15px;
+        }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="notification-card">
+            <h4 class="mb-4 text-center">Notificador FireBase</h4>
+
+            <form id="notification-form">
+                <div class="form-row">
+                    <div class="form-label-col">Token</div>
+                    <div class="flex-grow-1">
+                        <input type="text" class="form-control" id="token" placeholder="Token FCM del dispositivo">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-label-col">Asunto</div>
+                    <div class="flex-grow-1">
+                        <input type="text" class="form-control border-0" id="subject"
+                            placeholder="Escriba el asunto de la notificación">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-label-col">Mensaje</div>
+                    <div class="flex-grow-1">
+                        <textarea class="message-textarea" id="message" rows="3"
+                            placeholder="Escriba aqui su mensaje"></textarea>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-success send-btn">Enviar Notificación</button>
+            </form>
+
+            <div id="notification-log">
+                <div class="history-header">
+                    <h6 class="mb-0">Historial de notificaciones enviadas</h6>
+                    <button id="clear-history" class="btn btn-sm btn-outline-secondary">Limpiar</button>
+                </div>
+                <div class="list-group" id="notification-history">
+                    <p class="text-muted text-center" id="no-notifications">No hay notificaciones en el historial</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add alert container for messages -->
+    <div class="container mt-3">
+        <div id="alert-container"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // Load history from localStorage
+            loadHistoryFromStorage();
+
+            // Load saved token if available
+            const savedToken = localStorage.getItem('fcmToken');
+            if (savedToken) {
+                document.getElementById('token').value = savedToken;
+            }
+
+            // Form submission for notifications
+            document.getElementById('notification-form').addEventListener('submit', async function (e) {
+                e.preventDefault();
+
+                const token = document.getElementById('token').value;
+                const subject = document.getElementById('subject').value;
+                const message = document.getElementById('message').value;
+
+                if (!token) {
+                    showAlert('Por favor ingrese un token FCM', 'warning');
+                    return;
+                }
+
+                if (!subject || !message) {
+                    showAlert('Por favor, complete el asunto y el mensaje', 'danger');
+                    return;
+                }
+
+                // Save token for convenience
+                localStorage.setItem('fcmToken', token);
+
+                try {
+                    const response = await fetch('/api/send-notification-token', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            subject: subject,
+                            message: message,
+                            token: token
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        showAlert('Notificación enviada correctamente', 'success');
+
+                        // Add to history with full information
+                        const notificationData = {
+                            token: token,
+                            subject: subject,
+                            message: message,
+                            timestamp: new Date().toISOString(),
+                            success: true
+                        };
+
+                        addToHistory(notificationData);
+                        saveHistoryToStorage();
+
+                        document.getElementById('subject').value = '';
+                        document.getElementById('message').value = '';
+                    } else {
+                        showAlert(`Error: ${data.message}`, 'danger');
+
+                        // Add failed notification to history
+                        const notificationData = {
+                            token: token,
+                            subject: subject,
+                            message: message,
+                            timestamp: new Date().toISOString(),
+                            success: false,
+                            error: data.message
+                        };
+
+                        addToHistory(notificationData);
+                        saveHistoryToStorage();
+                    }
+                } catch (error) {
+                    showAlert(`Error: ${error.message}`, 'danger');
+
+                    // Add failed notification to history
+                    const notificationData = {
+                        token: token,
+                        subject: subject,
+                        message: message,
+                        timestamp: new Date().toISOString(),
+                        success: false,
+                        error: error.message
+                    };
+
+                    addToHistory(notificationData);
+                    saveHistoryToStorage();
+                }
+            });
+
+            // Clear history button
+            document.getElementById('clear-history').addEventListener('click', function () {
+                clearHistory();
+                showAlert('Historial limpiado', 'info');
+            });
+
+            // Function to show alerts
+            function showAlert(message, type) {
+                const alertContainer = document.getElementById('alert-container');
+                const alert = document.createElement('div');
+                alert.className = `alert alert-${type} alert-dismissible fade show`;
+                alert.role = 'alert';
+                alert.innerHTML = `
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                `;
+
+                alertContainer.innerHTML = '';
+                alertContainer.appendChild(alert);
+
+                // Auto-dismiss after 5 seconds
+                setTimeout(() => {
+                    alert.classList.remove('show');
+                    setTimeout(() => {
+                        alertContainer.removeChild(alert);
+                    }, 150);
+                }, 5000);
+            }
+
+            // Function to add to notification history
+            function addToHistory(data) {
+                const history = document.getElementById('notification-history');
+                const noNotificationsMsg = document.getElementById('no-notifications');
+
+                if (noNotificationsMsg) {
+                    noNotificationsMsg.remove();
+                }
+
+                const item = document.createElement('div');
+                item.className = `list-group-item ${data.success ? '' : 'list-group-item-danger'}`;
+
+                const tokenPreview = data.token.length > 15
+                    ? data.token.substring(0, 15) + '...'
+                    : data.token;
+
+                item.innerHTML = `
+        <div class="d-flex justify-content-between">
+            <strong>${data.subject}</strong>
+        </div>
+        <div>${data.message}</div>
+        <div class="small">Token: ${tokenPreview}</div>
+        ${data.success ?
+                        `<div class="text-success small">Enviado correctamente</div>` :
+                        `<div class="text-danger small">Error: ${data.error}</div>`}
+    `;
+
+                history.prepend(item);
+            }
+
+
+            // Function to save history to localStorage
+            function saveHistoryToStorage() {
+                const historyItems = document.getElementById('notification-history').children;
+                const historyData = [];
+
+                Array.from(historyItems).forEach(item => {
+                    if (item.id !== 'no-notifications') {
+                        const titleElement = item.querySelector('strong');
+                        const messageElement = item.querySelector('div:nth-child(2)');
+                        const tokenElement = item.querySelector('.small');
+                        const successElement = item.querySelector('.text-success');
+                        const errorElement = item.querySelector('.text-danger');
+
+                        const historyItem = {
+                            subject: titleElement ? titleElement.textContent : '',
+                            message: messageElement ? messageElement.textContent : '',
+                            token: tokenElement ? tokenElement.textContent.replace('Token: ', '') : '',
+                            success: !!successElement,
+                            error: errorElement ? errorElement.textContent.replace('Error: ', '') : ''
+                        };
+
+                        historyData.push(historyItem);
+                    }
+                });
+
+                localStorage.setItem('notificationHistory', JSON.stringify(
+                    historyData.slice(0, 20)
+                ));
+            }
+
+            // Function to load history from localStorage
+            function loadHistoryFromStorage() {
+                const historyData = JSON.parse(localStorage.getItem('notificationHistory') || '[]');
+
+                // Clear existing history
+                const history = document.getElementById('notification-history');
+                history.innerHTML = '';
+
+                if (historyData.length === 0) {
+                    history.innerHTML = '<p class="text-muted text-center" id="no-notifications">No hay notificaciones en el historial</p>';
+                    return;
+                }
+
+                // Add all items to history
+                historyData.forEach(item => {
+                    addToHistory(item);
+                });
+            }
+
+            // Function to clear history
+            function clearHistory() {
+                const history = document.getElementById('notification-history');
+                history.innerHTML = '<p class="text-muted text-center" id="no-notifications">No hay notificaciones en el historial</p>';
+                localStorage.removeItem('notificationHistory');
+            }
+        });
+    </script>
+</body>
+
+</html>
