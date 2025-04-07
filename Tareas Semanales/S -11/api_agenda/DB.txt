@@ -1,0 +1,10 @@
+CREATE DATABASE puellaAgendaDB;
+USE puellaagendadb;
+
+CREATE TABLE contacts(
+  id_contact INT PRIMARY KEY AUTO_INCREMENT NOT NULL,
+  contact_name varchar(100) NOT NULL,
+  contact_phone varchar(20) NOT NULL
+);
+
+INSERT INTO contacts VALUES (id_contact, 'Josue', '5734-1737');
